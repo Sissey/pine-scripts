@@ -1,0 +1,75 @@
+// Trend Fusion Dashboard
+// Multi-timeframe trend, momentum & volatility dashboard with signal alerts.
+// © Atlas Algo Labs — free to use. Not financial advice.
+//@version=5
+indicator("Trend Fusion Dashboard", overlay=true)
+
+// ── Inputs ─────────────────────────────────────────────────────────────
+grpTrend  = "Trend"
+fastLen   = input.int(21,  "Fast EMA",  minval=1, group=grpTrend)
+slowLen   = input.int(55,  "Slow EMA",  minval=1, group=grpTrend)
+grpMom    = "Momentum"
+rsiLen    = input.int(14,  "RSI Length", minval=2, group=grpMom)
+rsiOB     = input.int(70,  "RSI Overbought", group=grpMom)
+rsiOS     = input.int(30,  "RSI Oversold",  group=grpMom)
+grpTbl    = "Dashboard"
+showTable = input.bool(true, "Show dashboard table", group=grpTbl)
+tf1       = input.timeframe("15",  "Timeframe 1", group=grpTbl)
+tf2       = input.timeframe("60",  "Timeframe 2", group=grpTbl)
+tf3       = input.timeframe("240", "Timeframe 3", group=grpTbl)
+tf4       = input.timeframe("D",   "Timeframe 4", group=grpTbl)
+
+// ── Core calculations ──────────────────────────────────────────────────
+emaFast = ta.ema(close, fastLen)
+emaSlow = ta.ema(close, slowLen)
+rsiVal  = ta.rsi(close, rsiLen)
+
+trendScore() =>
+    f = ta.ema(close, fastLen)
+    s = ta.ema(close, slowLen)
+    f > s and close > f ? 2 : f > s ? 1 : f < s and close < f ? -2 : -1
+
+// Multi-timeframe trend scores
+s1 = request.security(syminfo.tickerid, tf1, trendScore(), lookahead=barmerge.lookahead_off)
+s2 = request.security(syminfo.tickerid, tf2, trendScore(), lookahead=barmerge.lookahead_off)
+s3 = request.security(syminfo.tickerid, tf3, trendScore(), lookahead=barmerge.lookahead_off)
+s4 = request.security(syminfo.tickerid, tf4, trendScore(), lookahead=barmerge.lookahead_off)
+
+// ── Plots ──────────────────────────────────────────────────────────────
+plot(emaFast, "Fast EMA", color=color.new(color.teal,   0), linewidth=2)
+plot(emaSlow, "Slow EMA", color=color.new(color.orange, 0), linewidth=2)
+
+bullCross = ta.crossover(emaFast, emaSlow)
+bearCross = ta.crossunder(emaFast, emaSlow)
+plotshape(bullCross, "Bull Cross", shape.triangleup,   location.belowbar, color.green, size=size.small)
+plotshape(bearCross, "Bear Cross", shape.triangledown, location.abovebar, color.red,   size=size.small)
+
+// Trend background shading
+bgcolor(emaFast > emaSlow ? color.new(color.green, 92) : color.new(color.red, 92))
+
+// ── Dashboard table ────────────────────────────────────────────────────
+scoreTxt(sc) => sc == 2 ? "Strong Up" : sc == 1 ? "Up" : sc == -1 ? "Down" : "Strong Down"
+scoreCol(sc) => sc > 0 ? color.new(color.green, 70) : color.new(color.red, 70)
+
+var table dash = table.new(position.top_right, 2, 6, border_width=1)
+if showTable and barstate.islast
+    table.cell(dash, 0, 0, "TF",        text_color=color.white, bgcolor=color.new(color.gray, 30))
+    table.cell(dash, 1, 0, "Trend",     text_color=color.white, bgcolor=color.new(color.gray, 30))
+    table.cell(dash, 0, 1, tf1,         text_color=color.white, bgcolor=color.new(color.gray, 60))
+    table.cell(dash, 1, 1, scoreTxt(s1), text_color=color.white, bgcolor=scoreCol(s1))
+    table.cell(dash, 0, 2, tf2,         text_color=color.white, bgcolor=color.new(color.gray, 60))
+    table.cell(dash, 1, 2, scoreTxt(s2), text_color=color.white, bgcolor=scoreCol(s2))
+    table.cell(dash, 0, 3, tf3,         text_color=color.white, bgcolor=color.new(color.gray, 60))
+    table.cell(dash, 1, 3, scoreTxt(s3), text_color=color.white, bgcolor=scoreCol(s3))
+    table.cell(dash, 0, 4, tf4,         text_color=color.white, bgcolor=color.new(color.gray, 60))
+    table.cell(dash, 1, 4, scoreTxt(s4), text_color=color.white, bgcolor=scoreCol(s4))
+    table.cell(dash, 0, 5, "RSI",       text_color=color.white, bgcolor=color.new(color.gray, 60))
+    table.cell(dash, 1, 5, str.tostring(rsiVal, "#.#"), text_color=color.white, bgcolor = rsiVal > rsiOB ? color.new(color.red, 50) : rsiVal < rsiOS ? color.new(color.green, 50) : color.new(color.gray, 60))
+
+// ── Alerts ─────────────────────────────────────────────────────────────
+alignedUp   = s1 > 0 and s2 > 0 and s3 > 0 and s4 > 0
+alignedDown = s1 < 0 and s2 < 0 and s3 < 0 and s4 < 0
+alertcondition(bullCross,                 "EMA Bull Cross",   "Fast EMA crossed above Slow EMA on {{ticker}}")
+alertcondition(bearCross,                 "EMA Bear Cross",   "Fast EMA crossed below Slow EMA on {{ticker}}")
+alertcondition(alignedUp and bullCross,   "Aligned Long",     "All timeframes bullish + bull cross on {{ticker}}")
+alertcondition(alignedDown and bearCross, "Aligned Short",    "All timeframes bearish + bear cross on {{ticker}}")
